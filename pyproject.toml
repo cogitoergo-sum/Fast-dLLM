@@ -1,0 +1,19 @@
+[project]
+name = "fast-dllm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.11.*"
+dependencies = [
+    "accelerate>=1.10.1",
+    "antlr4-python3-runtime>=4.13.2",
+    "gradio>=5.49.1",
+    "hf-xet>=1.1.10",
+    "lm-eval>=0.4.9.1",
+    "math-verify>=0.8.0",
+    "sympy>=1.14.0",
+    "torch>=2.8.0",
+    "transformers>=4.57.0",
+]
+[tool.pyright]
+typeCheckingMode = "off"

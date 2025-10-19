@@ -1,0 +1,24 @@
+******************************************************************
+**  Answer Length: 128  |  Sampling Steps: 128  **
+******************************************************************
+Enter your question: use cache: False use cache position: False threshold: None block size: 32
+Bot's reply: Hello! How can I assist you today?
+Number of forward passes: 128
+-----------------------------------------------------------------------
+Enter your question: use cache: False use cache position: False threshold: None block size: 32
+Bot's reply: Hallo! How can I help you today?
+Number of forward passes: 128
+-----------------------------------------------------------------------
+Enter your question: use cache: False use cache position: False threshold: None block size: 32
+Bot's reply: Sure, here's a joke for you:
+
+Why don't scientists trust atoms?
+
+Because they always make up everything.
+Number of forward passes: 128
+-----------------------------------------------------------------------
+Enter your question: use cache: False use cache position: False threshold: None block size: 32
+Bot's reply: "Hamlet" is a tragedy by William Shakespeare that tells the story of Prince Hamlet, who seeks revenge for his father's murder by his uncle Claudius. Hamlet's journey is marked by confusion, doubt, and introspection, as he grapples with the consequences of his actions and the nature of justice. The play explores themes of mortality, madness, and the complexities of revenge. Hamlet's character is defined by his intellectualism, moral ambiguity, and his struggle to reconcile his desire for revenge with his own moral compass. The play ultimately concludes with Hamlet's tragic death, leaving the audience to ponder the consequences of his actions and decisions.
+Number of forward passes: 128
+-----------------------------------------------------------------------
+Enter your question: 
