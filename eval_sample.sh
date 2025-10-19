@@ -14,6 +14,7 @@ factor=1.0
 model_path='GSAI-ML/LLaDA-8B-Instruct'
 
 uv run accelerate launch llada/eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} \
---limit 1 \
+--limit 32 \
+--output_path ./results_gsm8k \
 --confirm_run_unsafe_code --model llada_dist \
---model_args model_path=${model_path},gen_length=${length},steps=${steps},block_length=${block_length},batch_size=1,save_dir=./test_gsm8k,show_speed=True
+--model_args model_path=${model_path},gen_length=${length},steps=${steps},block_length=${block_length},save_dir=./test_gsm8k,show_speed=True
