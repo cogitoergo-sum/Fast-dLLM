@@ -8,3 +8,5 @@ dream/evals_results/
 .DS_Store
 **/.DS_Store
 .gradio/
+results_gsm8k/
+test_gsm8k/
