@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=fast-dlm-run
+#SBATCH --job-name=fast-dlm-run-Parallel
 #SBATCH --account=cse585f25_class
 #SBATCH --partition=spgpu
 #SBATCH --time=04:00:00
@@ -40,4 +40,3 @@ uv run accelerate launch llada/eval_llada.py --tasks ${task} --num_fewshot ${num
 --output_path ./results_gsm8k_parallel \
 --confirm_run_unsafe_code --model llada_dist \
 --model_args model_path=${model_path},gen_length=${length},steps=${steps},block_length=${block_length},threshold=0.9,save_dir=./test_gsm8k_parallel,show_speed=True
-
