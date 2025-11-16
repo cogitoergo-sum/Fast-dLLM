@@ -102,6 +102,78 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
     return x, nfe
 
 
+@ torch.no_grad()
+def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, drop_prob=0.5):
+    '''
+    Args:
+        model: Mask predictor.
+        prompt: A tensor of shape (1, L).
+        warmed_tokens: A tensor of shape (1, n), where n is the number of warmed tokens.
+        steps: Sampling steps, less than or equal to gen_length.
+        gen_length: Generated answer length.
+        block_length: Block length, less than or equal to gen_length. If less than gen_length, it means using semi_autoregressive remasking.
+        temperature: Categorical distribution sampling temperature.
+        cfg_scale: Unsupervised classifier-free guidance scale.
+        remasking: Remasking strategy. 'low_confidence' or 'random'.
+        mask_id: The toke id of [MASK] is 126336.
+    '''
+    remainder = gen_length - warmed_tokens.shape[1]
+    # output is still gen_length long, but the first warmed_tokens.shape[1] tokens are replaced with warmed_tokens.
+    x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+    warmed_tokens_dropped = dropout_warmed_tokens(warmed_tokens, mask_id, drop_prob) # replace 50% of the warmed tokens with the mask token
+    x[:, :prompt.shape[1]] = prompt.clone()
+    x[:, prompt.shape[1]:prompt.shape[1] + warmed_tokens_dropped.shape[1]] = warmed_tokens_dropped.clone()
+
+    assert gen_length % block_length == 0
+    num_blocks = gen_length // block_length
+
+    assert steps % num_blocks == 0
+    steps = steps // num_blocks
+
+    nfe = 0
+    for num_block in range(num_blocks):
+        block_mask_index = (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id)
+        num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps)
+        i = 0
+        while True:
+            nfe += 1
+            mask_index = (x == mask_id)
+            logits = model(x).logits
+            mask_index[:, prompt.shape[1] + (num_block + 1) * block_length:] = 0
+            if factor is None:
+                x0, transfer_index = get_transfer_index(logits, temperature, remasking, mask_index, x, num_transfer_tokens[:, i] if threshold is None else None, threshold)
+            else:
+                x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
+            x[transfer_index] = x0[transfer_index]
+            i += 1
+            if (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id).sum() == 0:
+                break
+    return x, nfe
+
+
+def dropout_warmed_tokens(warmed_tokens: torch.Tensor, mask_id: int = 126336, drop_prob: float = 0.5) -> torch.Tensor:
+    """
+    Randomly replacing warmed tokens with the mask token.
+
+    Args:
+        warmed_tokens: Tensor of shape (batch_size, num_warmed) holding the warmed tokens.
+        mask_id: The [MASK] token id (default: 126336).
+        drop_prob: Probability that any given warmed token is replaced with the mask token.
+
+    Returns:
+        Tensor with the same shape; replaced positions contain mask_id.
+    """
+    if not 0.0 <= drop_prob <= 1.0:
+        raise ValueError("drop_prob must be in [0, 1].")
+
+    if drop_prob == 0.0:
+        return warmed_tokens
+
+    # create Bernoulli mask; True where we drop (set back to mask)
+    drop_mask = torch.rand_like(warmed_tokens, dtype=torch.float32) < drop_prob
+
+    return torch.where(drop_mask, torch.full_like(warmed_tokens, mask_id), warmed_tokens)
 
 @ torch.no_grad()
 def generate_with_prefix_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
@@ -331,9 +403,26 @@ def main():
 
     input_ids = tokenizer(prompt)['input_ids']
     input_ids = torch.tensor(input_ids).to(device).unsqueeze(0)
+    
+    print("=========Initial generation with 0.9 threshold========\n")
+    out = generate(model, input_ids, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence')
+    print("Initial generation: NFE =", out[1])
+    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
+    print("Initial generation: ", string_out)
+    warmed_ids = tokenizer(string_out)['input_ids']
+    warmed_ids = torch.tensor(warmed_ids).to(device).unsqueeze(0)
 
-    out = generate_with_dual_cache(model, input_ids, steps=128, gen_length=128, block_length=32, temperature=0., remasking='low_confidence')
-    print(tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0])
+    print("=========Warmed generation with 0.5 drop rate========\n")
+    out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence')
+    print("Warmed generation with 0.5 drop rate: NFE =", out[1])
+    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
+    print("Warmed generation with 0.5 drop rate: ", string_out)
+
+    print("=========Warmed generation with 0 drop rate (no drop)========\n")
+    out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence')
+    print("Warmed generation with 0 drop rate: NFE =", out[1])
+    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
+    print("Warmed generation with 0 drop rate: ", string_out)
 
 if __name__ == '__main__':
     main()
