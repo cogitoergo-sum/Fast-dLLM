@@ -412,6 +412,12 @@ def main():
     warmed_ids = tokenizer(string_out)['input_ids']
     warmed_ids = torch.tensor(warmed_ids).to(device).unsqueeze(0)
 
+    print("=========Warmed generation with 1.0 drop rate (all drop)========\n")
+    out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence')
+    print("Warmed generation with 1.0 drop rate: NFE =", out[1])
+    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
+    print("Warmed generation with 1.0 drop rate: ", string_out)
+
     print("=========Warmed generation with 0.5 drop rate========\n")
     out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence')
     print("Warmed generation with 0.5 drop rate: NFE =", out[1])
