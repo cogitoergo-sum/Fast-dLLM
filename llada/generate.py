@@ -485,20 +485,10 @@ def main():
 
     print("=========== TEST 4 : SWAPPED Warmed Generation with Remasking ===========")
     warmed_id1, warmed_id2 = warmed_id2, warmed_id1
-    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    display_generation("Swapped warmed generation with 1.0 drop rate (all drop)", out, input_ids)
-    out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    display_generation("Swapped warmed generation with 1.0 drop rate (all drop)", out, input_ids2)
-    
-    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    display_generation("Swapped warmed generation with 0.5 drop rate", out, input_ids)
-    out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    display_generation("Swapped warmed generation with 0.5 drop rate", out, input_ids2)
-
-    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    display_generation("Swapped warmed generation with 0 drop rate (no drop)", out, input_ids)
-    out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    display_generation("Swapped warmed generation with 0 drop rate (no drop)", out, input_ids2)
+    for i in range(10):
+        drop_prob = i/10
+        out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=drop_prob, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+        display_generation(f"Swapped warmed generation with {drop_prob} drop rate", out, input_ids)
 
 if __name__ == '__main__':
     main()
