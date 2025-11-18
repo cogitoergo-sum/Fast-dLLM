@@ -101,6 +101,8 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
                 x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
             x[transfer_index] = x0[transfer_index]
             remask_bias = 2.5 * math.exp(DECAY_RATE * i) - 2 if remask else -1.0
+            # testing fixed remask bias
+            remask_bias = 0.25
             remask_indices = sample_remask_indices(logits, x, candidate_mask=transfer_index, bias=remask_bias)
             if remask_indices.numel() > 0:
                 x[remask_indices[:, 0], remask_indices[:, 1]] = mask_id
