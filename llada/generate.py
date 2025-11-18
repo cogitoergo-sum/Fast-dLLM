@@ -15,12 +15,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Modified from LLaDA repos: https://github.com/ML-GSAI/LLaDA
 
+import math
 import torch
 import numpy as np
 import torch.nn.functional as F
 import os
+from typing import Optional
 from transformers import AutoTokenizer, AutoModel
 from model.modeling_llada import LLaDAModelLM
+DECAY_RATE = math.log(0.4) / 40.0
+
 
 def add_gumbel_noise(logits, temperature):
     '''
@@ -59,7 +63,7 @@ def get_num_transfer_tokens(mask_index, steps):
 
 @ torch.no_grad()
 def generate(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
-             remasking='low_confidence', mask_id=126336, threshold=None, factor=None):
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, remask = False):
     '''
     Args:
         model: Mask predictor.
@@ -96,6 +100,10 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
             else:
                 x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
             x[transfer_index] = x0[transfer_index]
+            remask_bias = 2.5 * math.exp(DECAY_RATE * i) - 2 if remask else -1.0
+            remask_indices = sample_remask_indices(logits, x, candidate_mask=transfer_index, bias=remask_bias)
+            if remask_indices.numel() > 0:
+                x[remask_indices[:, 0], remask_indices[:, 1]] = mask_id
             i += 1
             if (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id).sum() == 0:
                 break
@@ -104,7 +112,7 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
 
 @ torch.no_grad()
 def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
-             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, drop_prob=0.5):
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, drop_prob=0.5, remask = False):
     '''
     Args:
         model: Mask predictor.
@@ -118,7 +126,6 @@ def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, blo
         remasking: Remasking strategy. 'low_confidence' or 'random'.
         mask_id: The toke id of [MASK] is 126336.
     '''
-    remainder = gen_length - warmed_tokens.shape[1]
     # output is still gen_length long, but the first warmed_tokens.shape[1] tokens are replaced with warmed_tokens.
     x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
     warmed_tokens_dropped = dropout_warmed_tokens(warmed_tokens, mask_id, drop_prob) # replace 50% of the warmed tokens with the mask token
@@ -146,6 +153,10 @@ def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, blo
             else:
                 x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
             x[transfer_index] = x0[transfer_index]
+            remask_bias = 2.5 * math.exp(DECAY_RATE * i) - 2 if remask else -1.0
+            remask_indices = sample_remask_indices(logits, x, candidate_mask=transfer_index, bias=remask_bias)
+            if remask_indices.numel() > 0:
+                x[remask_indices[:, 0], remask_indices[:, 1]] = mask_id
             i += 1
             if (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id).sum() == 0:
                 break
@@ -174,6 +185,35 @@ def dropout_warmed_tokens(warmed_tokens: torch.Tensor, mask_id: int = 126336, dr
     drop_mask = torch.rand_like(warmed_tokens, dtype=torch.float32) < drop_prob
 
     return torch.where(drop_mask, torch.full_like(warmed_tokens, mask_id), warmed_tokens)
+
+
+def sample_remask_indices(
+    logits: torch.Tensor,
+    token_ids: torch.Tensor,
+    candidate_mask: Optional[torch.Tensor] = None,
+    bias: float = 0.0,
+) -> torch.Tensor:
+    """
+    Select positions to be re-masked based on confidence and random sampling.
+
+    Args:
+        logits: Tensor of shape (batch, seq, vocab).
+        token_ids: Tensor of shape (batch, seq) containing current token ids.
+        candidate_mask: Optional boolean tensor of shape (batch, seq) indicating positions eligible
+            for re-masking. If ``None``, all positions are considered.
+        bias: Optional value added to the random draw before comparison. Positive values make
+            re-masking more likely; negative values make it less likely.
+
+    Returns:
+        Tensor of shape (num_positions, 2) with (batch_idx, seq_idx) pairs to re-mask.
+    """
+    probs = F.softmax(logits.to(torch.float64), dim=-1)
+    confidences = torch.gather(probs, dim=-1, index=token_ids.unsqueeze(-1)).squeeze(-1)
+    random_draw = torch.rand_like(confidences)
+    remask_mask = random_draw + bias > confidences
+    if candidate_mask is not None:
+        remask_mask = remask_mask & candidate_mask
+    return torch.nonzero(remask_mask, as_tuple=False)
 
 @ torch.no_grad()
 def generate_with_prefix_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
@@ -396,39 +436,69 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True)
 
     prompt = "Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?"
-
+    prompt2 = "Sofia rides her bike at 15 kilometers per hour for 3 hours. After taking a short break, she continues riding at 10 kilometers per hour for 2 more hours. How many kilometers does she travel in total?"
+    print("Prompt 1: \n", prompt)
+    print("Prompt 2: \n", prompt2)
     # Add special tokens for the Instruct model. The Base model does not require the following two lines.
     m = [{"role": "user", "content": prompt}, ]
+    m2 = [{"role": "user", "content": prompt2}, ]
     prompt = tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False)
-
+    prompt2 = tokenizer.apply_chat_template(m2, add_generation_prompt=True, tokenize=False)
     input_ids = tokenizer(prompt)['input_ids']
     input_ids = torch.tensor(input_ids).to(device).unsqueeze(0)
+    input_ids2 = tokenizer(prompt2)['input_ids']
+    input_ids2 = torch.tensor(input_ids2).to(device).unsqueeze(0)
     
-    print("=========Initial generation with 0.9 threshold========\n")
+    def display_generation(title: str, outputs, input_tensor):
+        print(f"========= {title} =========")
+        print("NFE =", outputs[1])
+        generated_str: str = tokenizer.batch_decode(outputs[0][:, input_tensor.shape[1]:], skip_special_tokens=True)[0]
+        print("Output:", generated_str, "\n")
+        return generated_str
+
+    print("=========== TEST 1 : Basic Generation ===========")
     out = generate(model, input_ids, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence')
-    print("Initial generation: NFE =", out[1])
-    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
-    print("Initial generation: ", string_out)
-    warmed_ids = tokenizer(string_out)['input_ids']
-    warmed_ids = torch.tensor(warmed_ids).to(device).unsqueeze(0)
+    generated_string1 = display_generation("Initial generation with 0.9 threshold", out, input_ids)
+    warmed_id1 = tokenizer(generated_string1)['input_ids']
+    warmed_id1 = torch.tensor(warmed_id1).to(device).unsqueeze(0)
 
-    print("=========Warmed generation with 1.0 drop rate (all drop)========\n")
-    out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence')
-    print("Warmed generation with 1.0 drop rate: NFE =", out[1])
-    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
-    print("Warmed generation with 1.0 drop rate: ", string_out)
+    out = generate(model, input_ids2, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence')
+    generated_string2 = display_generation("Initial generation with 0.9 threshold", out, input_ids2)
+    warmed_id2 = tokenizer(generated_string2)['input_ids']
+    warmed_id2 = torch.tensor(warmed_id2).to(device).unsqueeze(0)
 
-    print("=========Warmed generation with 0.5 drop rate========\n")
-    out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence')
-    print("Warmed generation with 0.5 drop rate: NFE =", out[1])
-    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
-    print("Warmed generation with 0.5 drop rate: ", string_out)
+    print("=========== TEST 2 : Basic Generation with Remasking ===========")
+    out = generate(model, input_ids, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    generated_string1 = display_generation("Initial generation with 0.9 threshold", out, input_ids)
+    out = generate(model, input_ids2, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    generated_string2 = display_generation("Initial generation with 0.9 threshold", out, input_ids2)
 
-    print("=========Warmed generation with 0 drop rate (no drop)========\n")
-    out = warmed_generate(model, warmed_ids, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence')
-    print("Warmed generation with 0 drop rate: NFE =", out[1])
-    string_out : str = tokenizer.batch_decode(out[0][:, input_ids.shape[1]:], skip_special_tokens=True)[0]
-    print("Warmed generation with 0 drop rate: ", string_out)
+    print("=========== TEST 3 : Warmed Generation ===========")
+    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence')
+    display_generation("Warmed generation with 1.0 drop rate (all drop)", out, input_ids)
+
+    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence')
+    display_generation("Warmed generation with 0.5 drop rate", out, input_ids)
+
+    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence')
+    display_generation("Warmed generation with 0 drop rate (no drop)", out, input_ids)
+
+    print("=========== TEST 4 : SWAPPED Warmed Generation with Remasking ===========")
+    warmed_id1, warmed_id2 = warmed_id2, warmed_id1
+    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    display_generation("Swapped warmed generation with 1.0 drop rate (all drop)", out, input_ids)
+    out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    display_generation("Swapped warmed generation with 1.0 drop rate (all drop)", out, input_ids2)
+    
+    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    display_generation("Swapped warmed generation with 0.5 drop rate", out, input_ids)
+    out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    display_generation("Swapped warmed generation with 0.5 drop rate", out, input_ids2)
+
+    out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    display_generation("Swapped warmed generation with 0 drop rate (no drop)", out, input_ids)
+    out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+    display_generation("Swapped warmed generation with 0 drop rate (no drop)", out, input_ids2)
 
 if __name__ == '__main__':
     main()
