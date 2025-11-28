@@ -155,6 +155,7 @@ def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, blo
                 x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
             x[transfer_index] = x0[transfer_index]
             remask_bias = 2.5 * math.exp(DECAY_RATE * i) - 2 if remask else -1.0
+            remask_bias = -0.0375*i+0.5
             remask_indices = sample_remask_indices(logits, x, candidate_mask=transfer_index, bias=remask_bias)
             if remask_indices.numel() > 0:
                 x[remask_indices[:, 0], remask_indices[:, 1]] = mask_id
@@ -450,7 +451,9 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True)
 
     prompt = "Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?"
+    answer = "72"
     prompt2 = "Sofia rides her bike at 15 kilometers per hour for 3 hours. After taking a short break, she continues riding at 10 kilometers per hour for 2 more hours. How many kilometers does she travel in total?"
+    answer2 = "65"
     print("Prompt 1: \n", prompt)
     print("Prompt 2: \n", prompt2)
     # Add special tokens for the Instruct model. The Base model does not require the following two lines.
@@ -463,46 +466,54 @@ def main():
     input_ids2 = tokenizer(prompt2)['input_ids']
     input_ids2 = torch.tensor(input_ids2).to(device).unsqueeze(0)
     
-    def display_generation(title: str, outputs, input_tensor):
+    def display_generation(title: str, outputs, input_tensor, answer):
         print(f"========= {title} =========")
         print("NFE =", outputs[1])
         generated_str: str = tokenizer.batch_decode(outputs[0][:, input_tensor.shape[1]:], skip_special_tokens=True)[0]
+        if answer not in generated_str:
+            print("Testing error: Swapped token led to false result.")
         print("Output:", generated_str, "\n")
         return generated_str
 
     print("=========== TEST 1 : Basic Generation ===========")
     out = generate(model, input_ids, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence')
-    generated_string1 = display_generation("Initial generation with 0.9 threshold", out, input_ids)
+    generated_string1 = display_generation("Initial generation with 0.9 threshold", out, input_ids, answer)
     warmed_id1 = tokenizer(generated_string1)['input_ids']
     warmed_id1 = torch.tensor(warmed_id1).to(device).unsqueeze(0)
 
     out = generate(model, input_ids2, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence')
-    generated_string2 = display_generation("Initial generation with 0.9 threshold", out, input_ids2)
+    generated_string2 = display_generation("Initial generation with 0.9 threshold", out, input_ids2, answer2)
     warmed_id2 = tokenizer(generated_string2)['input_ids']
     warmed_id2 = torch.tensor(warmed_id2).to(device).unsqueeze(0)
 
     print("=========== TEST 2 : Basic Generation with Remasking ===========")
     out = generate(model, input_ids, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    generated_string1 = display_generation("Initial generation with 0.9 threshold", out, input_ids)
+    generated_string1 = display_generation("Initial generation with 0.9 threshold", out, input_ids, answer)
     out = generate(model, input_ids2, steps=128, gen_length=128, block_length=32, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-    generated_string2 = display_generation("Initial generation with 0.9 threshold", out, input_ids2)
+    generated_string2 = display_generation("Initial generation with 0.9 threshold", out, input_ids2, answer2)
 
     print("=========== TEST 3 : Warmed Generation ===========")
     out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=1.0, threshold=0.9, temperature=0., remasking='low_confidence')
-    display_generation("Warmed generation with 1.0 drop rate (all drop)", out, input_ids)
+    display_generation("Warmed generation with 1.0 drop rate (all drop)", out, input_ids, answer)
 
     out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.5, threshold=0.9, temperature=0., remasking='low_confidence')
-    display_generation("Warmed generation with 0.5 drop rate", out, input_ids)
+    display_generation("Warmed generation with 0.5 drop rate", out, input_ids, answer)
 
     out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=0.0, threshold=0.9, temperature=0., remasking='low_confidence')
-    display_generation("Warmed generation with 0 drop rate (no drop)", out, input_ids)
+    display_generation("Warmed generation with 0 drop rate (no drop)", out, input_ids, answer)
 
-    print("=========== TEST 4 : SWAPPED Warmed Generation with Remasking ===========")
+    print("=========== TEST 4 : SWAPPED Warmed Generation with Remasking on Prompt 1 ===========")
     warmed_id1, warmed_id2 = warmed_id2, warmed_id1
     for i in range(10):
         drop_prob = i/10
         out = warmed_generate(model, warmed_id1, input_ids, steps=128, gen_length=128, block_length=32, drop_prob=drop_prob, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
-        display_generation(f"Swapped warmed generation with {drop_prob} drop rate", out, input_ids)
+        display_generation(f"Swapped warmed generation with {drop_prob} drop rate", out, input_ids, answer)
+
+    print("=========== TEST 4.1 : SWAPPED Warmed Generation with Remasking on Prompt 2 ===========")
+    for i in range(10):
+        drop_prob = i/10
+        out = warmed_generate(model, warmed_id2, input_ids2, steps=128, gen_length=128, block_length=32, drop_prob=drop_prob, threshold=0.9, temperature=0., remasking='low_confidence', remask=True)
+        display_generation(f"Swapped warmed generation with {drop_prob} drop rate", out, input_ids2, answer2)
 
 if __name__ == '__main__':
     main()

@@ -10,3 +10,7 @@ dream/evals_results/
 .gradio/
 results_gsm8k/
 test_gsm8k/
+*.out
+*.jsonl
+*.json
+*.log

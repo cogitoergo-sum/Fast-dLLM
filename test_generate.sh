@@ -13,4 +13,6 @@ module load cuda
 module load cudnn
 module load uv
 
-uv run python llada/generate.py >> test_generate.log 2>&1
+mkdir -p logs
+LOG_FILE="logs/test_generate_$(date +%Y%m%d_%H%M%S).log"
+uv run python llada/generate.py >> "$LOG_FILE" 2>&1
