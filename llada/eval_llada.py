@@ -34,7 +34,7 @@ from lm_eval.api.registry import register_model
 from tqdm import tqdm
 import os
 from transformers import AutoTokenizer, AutoModel, AutoConfig
-from generate import generate, generate_with_prefix_cache, generate_with_dual_cache
+from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, wrapper_generate
 from model.modeling_llada import LLaDAModelLM
 import json
 import time
@@ -70,6 +70,7 @@ class LLaDAEvalHarness(LM):
         save_dir=None,
         show_speed=False,
         dual_cache=False,
+        load_results_path=None,
         **kwargs,
     ):
         """
@@ -143,6 +144,7 @@ class LLaDAEvalHarness(LM):
         self.save_dir = save_dir
         self.show_speed = show_speed
         self.dual_cache = dual_cache
+        self.load_results_path = load_results_path
 
     @property
     def rank(self):
@@ -306,7 +308,51 @@ class LLaDAEvalHarness(LM):
     def loglikelihood_rolling(self, requests):
         raise NotImplementedError
 
+
+    def clean_answer(self, answer: str):
+        # Removes the trailing #### <value> section.
+        match = re.search(r"####\s*(.+)$", answer)
+        if match:
+            final = match.group(1).strip()
+            cleaned = answer[:match.start()].rstrip()
+            return cleaned, final # this gives you BOTH the cleaned and final result
+        return answer, None
+        
     def generate_until(self, requests):
+        cache = {}
+        if self.load_results_path is not None:
+            print(f"Loading results from {self.load_results_path}")
+            with open(self.load_results_path, "r", encoding="utf-8") as f:
+                cached_data = [json.loads(line) for line in f]
+            
+            for entry in cached_data:
+                # Parsing main doc
+                if "doc" in entry:
+                    doc = entry["doc"]
+                    if "question" in doc and "answer" in doc:
+                        cleaned, final = self.clean_answer(doc["answer"])  
+                        cache[doc["question"]] = cleaned  # i use cleaned which is the full reasoning + answer
+                
+                # Parse more Q & A in the arguments field
+                if "arguments" in entry:
+                    try:
+                        arg_0 = entry["arguments"]["gen_args_0"]["arg_0"]
+                        blocks = arg_0.split("\n\n")
+                        
+                        for block in blocks:
+                            if block.startswith("Question: ") and "\nAnswer: " in block:
+                                try:
+                                    q, a = block.split("\nAnswer: ", 1)
+                                    q = q[len("Question: "):].strip()
+                                    a = a.strip()
+                                    cleaned, final = self.clean_answer(a) 
+                                    cache[q] = cleaned  
+                                except ValueError:
+                                    continue
+                    except (KeyError, AttributeError):
+                        pass
+            
+        print(f"Loaded {len(cache)} entries into cache")
         output = []
         num_tokens = 0
         num_nfe = 0
@@ -337,6 +383,20 @@ class LLaDAEvalHarness(LM):
         start_time = time.time()
 
         for batch in tqdm(batched_requests, desc="Generating..."):
+            # my changes are from here 
+            warmed_strings = []
+            if self.load_results_path is not None:
+                for req in batch:
+                    # use req.doc["question"] instead of req.args[0] to keep it consistent 
+                    question = req.doc["question"]
+                    if question in cache:
+                        print(f"Question found in cache: {question} ==> has the answer: {cache[question]}")
+                        warmed_strings.append(cache[question])
+                    else:
+                        print(f"Warning: Question not found in cache: {question}")
+                        warmed_strings.append("")
+            # to here
+
             batched_input_ids = []
             max_len = 0
             pad_len = []
@@ -422,9 +482,10 @@ class LLaDAEvalHarness(LM):
                         factor=self.factor,
                     )
             else:
-                generated_answer, nfe = generate(
+                generated_answer, nfe = wrapper_generate(
                     self.model,
                     input_ids,
+                    warmed_strings,
                     steps=self.steps,
                     gen_length=self.gen_length,
                     block_length=self.block_length,
@@ -488,12 +549,19 @@ class LLaDAEvalHarness(LM):
                 print("avg nfe: ", num_nfe / len(output))
                 print("=" * 20, end="\n\n")
             # self.accelerator.wait_for_everyone()
+            
         end_time = time.time()
         if self.show_speed:
             print(f"Total number of tokens generated: {num_tokens}")
             print(f"Total time taken: {end_time - start_time} seconds")
             print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
             print(f"Total NFE is {num_nfe}")
+
+        # Keep it commented unless you want to print out the full cache state for debugging
+        # print("########################### HERE IS THE FULL CACHE STATE ################\n")
+        # print(f"Loaded {len(cache)} entries into cache:")
+        # for i, (q, a) in enumerate(cache.items(), 1):
+        #     print(f"\n[{i}] Question: {q}\nAnswer: {a}\n" + "-" * 40)
 
         return output
 

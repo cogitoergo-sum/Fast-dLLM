@@ -111,6 +111,29 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
     return x, nfe
 
 
+
+@ torch.no_grad()
+def wrapper_generate(model, prompt, warmed_strings, steps=128, gen_length=128, block_length=128, temperature=0.,
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, remask = False):
+    '''
+    Args:
+        model: Mask predictor.
+        prompt: A tensor of shape (1, L).
+        steps: Sampling steps, less than or equal to gen_length.
+        gen_length: Generated answer length.
+        block_length: Block length, less than or equal to gen_length. If less than gen_length, it means using semi_autoregressive remasking.
+        temperature: Categorical distribution sampling temperature.
+        cfg_scale: Unsupervised classifier-free guidance scale.
+        remasking: Remasking strategy. 'low_confidence' or 'random'.
+        mask_id: The toke id of [MASK] is 126336.
+    '''
+    print(warmed_strings)
+    # return generate(model, prompt, steps, gen_length, block_length, temperature, remasking, mask_id, threshold, factor, remask)
+    x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+    x[:, :prompt.shape[1]] = prompt.clone()
+    return x, 0
+
+
 @ torch.no_grad()
 def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
              remasking='low_confidence', mask_id=126336, threshold=None, factor=None, drop_prob=0.5, remask = False):
