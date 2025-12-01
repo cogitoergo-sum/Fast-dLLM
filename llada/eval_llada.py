@@ -309,51 +309,50 @@ class LLaDAEvalHarness(LM):
         raise NotImplementedError
 
 
-    def clean_answer(answer: str):
-        """
-        Removes the trailing #### <value> section.
-        Returns the cleaned answer text and the extracted final answer if available.
-        """
+    def clean_answer(self, answer: str):
+        # Removes the trailing #### <value> section.
         match = re.search(r"####\s*(.+)$", answer)
         if match:
             final = match.group(1).strip()
             cleaned = answer[:match.start()].rstrip()
-            return cleaned, final
+            return cleaned, final # this gives you BOTH the cleaned and final result
         return answer, None
         
     def generate_until(self, requests):
-        # Load cache if path is provided
         cache = {}
         if self.load_results_path is not None:
             print(f"Loading results from {self.load_results_path}")
             with open(self.load_results_path, "r", encoding="utf-8") as f:
                 cached_data = [json.loads(line) for line in f]
-            # Create a lookup dictionary: question -> answer
-            # ---- Parse main doc ----
-            if "doc" in cached_data:
-                doc = cached_data["doc"]
-                if "question" in doc and "answer" in doc:
-                    cleaned = clean_answer(doc["answer"])
-                    cache[doc["question"]] = cleaned
-
-            # ---- Parse additional generated Q&A blocks ----
-            try:
-                arg_0 = cached_data["arguments"]["gen_args_0"]["arg_0"]
-                blocks = arg_0.split("\n\n")
-            except Exception:
-                blocks = []
-
-            for block in blocks:
-                if block.startswith("Question: ") and "\nAnswer: " in block:
+            
+            for entry in cached_data:
+                # Parsing main doc
+                if "doc" in entry:
+                    doc = entry["doc"]
+                    if "question" in doc and "answer" in doc:
+                        cleaned, final = self.clean_answer(doc["answer"])  
+                        cache[doc["question"]] = cleaned  # i use cleaned which is the full reasoning + answer
+                
+                # Parse more Q & A in the arguments field
+                if "arguments" in entry:
                     try:
-                        q, a = block.split("\nAnswer: ", 1)
-                        q = q_raw[len("Question: "):].strip()
-                        a = a_raw.strip()
-                        cleaned = clean_answer(a)
-                        cache[q] = cleaned
+                        arg_0 = entry["arguments"]["gen_args_0"]["arg_0"]
+                        blocks = arg_0.split("\n\n")
                         
-                    except ValueError:
-                        continue
+                        for block in blocks:
+                            if block.startswith("Question: ") and "\nAnswer: " in block:
+                                try:
+                                    q, a = block.split("\nAnswer: ", 1)
+                                    q = q[len("Question: "):].strip()
+                                    a = a.strip()
+                                    cleaned, final = self.clean_answer(a) 
+                                    cache[q] = cleaned  
+                                except ValueError:
+                                    continue
+                    except (KeyError, AttributeError):
+                        pass
+            
+        print(f"Loaded {len(cache)} entries into cache")
         output = []
         num_tokens = 0
         num_nfe = 0
@@ -388,12 +387,13 @@ class LLaDAEvalHarness(LM):
             warmed_strings = []
             if self.load_results_path is not None:
                 for req in batch:
-                    question = req.args[0]
+                    # use req.doc["question"] instead of req.args[0] to keep it consistent 
+                    question = req.doc["question"]
                     if question in cache:
-                        print(f"Question found in cache: {question[:50]}... has the answer: {cache[question]}")
+                        print(f"Question found in cache: {question} ==> has the answer: {cache[question]}")
                         warmed_strings.append(cache[question])
                     else:
-                        print(f"Warning: Question not found in cache: {question[:50]}...")
+                        print(f"Warning: Question not found in cache: {question}")
                         warmed_strings.append("")
             # to here
 
@@ -557,8 +557,12 @@ class LLaDAEvalHarness(LM):
             print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
             print(f"Total NFE is {num_nfe}")
 
-        print("########################### HERE IS THE CACHE ################\n")
-        print(cache)
+        # Keep it commented unless you want to print out the full cache state for debugging
+        # print("########################### HERE IS THE FULL CACHE STATE ################\n")
+        # print(f"Loaded {len(cache)} entries into cache:")
+        # for i, (q, a) in enumerate(cache.items(), 1):
+        #     print(f"\n[{i}] Question: {q}\nAnswer: {a}\n" + "-" * 40)
+
         return output
 
 
