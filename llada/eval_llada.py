@@ -113,14 +113,23 @@ class LLaDAEvalHarness(LM):
         self.model.eval()
 
         self.device = torch.device(device)
+        # self.device = torch.device(device) # Original line
         if self.accelerator is not None:
             self.model = self.accelerator.prepare(self.model)
             self.device = torch.device(f"{self.accelerator.device}")
             self._rank = self.accelerator.local_process_index
             self._world_size = self.accelerator.num_processes
         else:
+            # Check for MPS availability first on Mac
+            if torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+            
             self.model = self.model.to(device)
-
+            self.device = torch.device(device)
         self.mask_id = mask_id
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path, trust_remote_code=True
