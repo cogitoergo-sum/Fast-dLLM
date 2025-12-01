@@ -101,7 +101,7 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
                 x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
             x[transfer_index] = x0[transfer_index]
             remask_bias = 2.5 * math.exp(DECAY_RATE * i) - 2 if remask else -1.0
-            remask_bias = -0.0375*i+0.5
+            remask_bias = -0.0375*i+0.5 if remask else -1.0
             remask_indices = sample_remask_indices(logits, x, candidate_mask=transfer_index, bias=remask_bias)
             if remask_indices.numel() > 0:
                 x[remask_indices[:, 0], remask_indices[:, 1]] = mask_id
@@ -450,9 +450,9 @@ def main():
     model = LLaDAModelLM.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True, torch_dtype=torch.bfloat16).to(device).eval()
     tokenizer = AutoTokenizer.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True)
 
-    prompt = "Lily can run 12 kilometers per hour for 4 hours. After that, she runs 6 kilometers per hour. How many kilometers can she run in 8 hours?"
-    answer = "72"
-    prompt2 = "Sofia rides her bike at 15 kilometers per hour for 3 hours. After taking a short break, she continues riding at 10 kilometers per hour for 2 more hours. How many kilometers does she travel in total?"
+    prompt = "An office has 90 workers. 2/3rds of them are men and the rest are women. The company hires 10 new employees and 100% of them are women. What is the total percentage of women in the company now?"
+    answer = "40"
+    prompt2 = "Hilary is shucking corn from ears that grew on her farm. She gets four ears of corn per stalk, and she has 108 stalks growing. Half the ears of corn have 500 kernels of corn and the other half have 100 more. How many kernels of corn does Hilary have to shuck?"
     answer2 = "65"
     print("Prompt 1: \n", prompt)
     print("Prompt 2: \n", prompt2)
