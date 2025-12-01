@@ -36,6 +36,7 @@ import os
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, wrapper_generate
 from model.modeling_llada import LLaDAModelLM
+from mix_generate import mixed_generate
 import json
 import time
 
@@ -482,8 +483,22 @@ class LLaDAEvalHarness(LM):
                         factor=self.factor,
                     )
             else:
-                generated_answer, nfe = wrapper_generate(
+                # generated_answer, nfe = wrapper_generate(
+                #     self.model,
+                #     input_ids,
+                #     warmed_strings,
+                #     steps=self.steps,
+                #     gen_length=self.gen_length,
+                #     block_length=self.block_length,
+                #     temperature=0,
+                #     remasking=self.remasking,
+                #     mask_id=self.mask_id,
+                #     threshold=self.threshold,
+                #     factor=self.factor,
+                # )
+                generated_answer, nfe = mixed_generate(
                     self.model,
+                    self.model.model.transformer['wte'],
                     input_ids,
                     warmed_strings,
                     steps=self.steps,
@@ -494,6 +509,7 @@ class LLaDAEvalHarness(LM):
                     mask_id=self.mask_id,
                     threshold=self.threshold,
                     factor=self.factor,
+                    drop_prob=0.5
                 )
 
             if (
