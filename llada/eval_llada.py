@@ -308,6 +308,19 @@ class LLaDAEvalHarness(LM):
     def loglikelihood_rolling(self, requests):
         raise NotImplementedError
 
+
+    def clean_answer(answer: str):
+        """
+        Removes the trailing #### <value> section.
+        Returns the cleaned answer text and the extracted final answer if available.
+        """
+        match = re.search(r"####\s*(.+)$", answer)
+        if match:
+            final = match.group(1).strip()
+            cleaned = answer[:match.start()].rstrip()
+            return cleaned, final
+        return answer, None
+        
     def generate_until(self, requests):
         # Load cache if path is provided
         cache = {}
@@ -316,26 +329,31 @@ class LLaDAEvalHarness(LM):
             with open(self.load_results_path, "r", encoding="utf-8") as f:
                 cached_data = [json.loads(line) for line in f]
             # Create a lookup dictionary: question -> answer
-            for entry in cached_data:
-                # Add the main doc question and answer
-                if "doc" in entry and "question" in entry["doc"] and "answer" in entry["doc"]:
-                    cache[entry["doc"]["question"]] = entry["doc"]["answer"]
-                
-                # Parse additional questions and answers from arguments if present
-                if "arguments" in entry and "gen_args_0" in entry["arguments"] and "arg_0" in entry["arguments"]["gen_args_0"]:
-                    arg_0 = entry["arguments"]["gen_args_0"]["arg_0"]
-                    examples = arg_0.split("\n\n")
-                    for ex in examples:
-                        if ex.startswith("Question: ") and "\nAnswer: " in ex:
-                            try:
-                                q_part, a_part = ex.split("\nAnswer: ", 1)
-                                question = q_part[len("Question: "):].strip()
-                                if "####" in a_part:
-                                    answer = a_part.strip()
-                                    cache[question] = answer
-                            except ValueError:
-                                continue
+            # ---- Parse main doc ----
+            if "doc" in cached_data:
+                doc = cached_data["doc"]
+                if "question" in doc and "answer" in doc:
+                    cleaned = clean_answer(doc["answer"])
+                    cache[doc["question"]] = cleaned
 
+            # ---- Parse additional generated Q&A blocks ----
+            try:
+                arg_0 = cached_data["arguments"]["gen_args_0"]["arg_0"]
+                blocks = arg_0.split("\n\n")
+            except Exception:
+                blocks = []
+
+            for block in blocks:
+                if block.startswith("Question: ") and "\nAnswer: " in block:
+                    try:
+                        q, a = block.split("\nAnswer: ", 1)
+                        q = q_raw[len("Question: "):].strip()
+                        a = a_raw.strip()
+                        cleaned = clean_answer(a)
+                        cache[q] = cleaned
+                        
+                    except ValueError:
+                        continue
         output = []
         num_tokens = 0
         num_nfe = 0
@@ -539,6 +557,8 @@ class LLaDAEvalHarness(LM):
             print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
             print(f"Total NFE is {num_nfe}")
 
+        print("########################### HERE IS THE CACHE ################\n")
+        print(cache)
         return output
 
 
