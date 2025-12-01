@@ -34,7 +34,7 @@ from lm_eval.api.registry import register_model
 from tqdm import tqdm
 import os
 from transformers import AutoTokenizer, AutoModel, AutoConfig
-from generate import generate, generate_with_prefix_cache, generate_with_dual_cache
+from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, wrapper_generate
 from model.modeling_llada import LLaDAModelLM
 import json
 import time
