@@ -70,6 +70,7 @@ class LLaDAEvalHarness(LM):
         save_dir=None,
         show_speed=False,
         dual_cache=False,
+        load_results_path=None,
         **kwargs,
     ):
         """
@@ -143,6 +144,7 @@ class LLaDAEvalHarness(LM):
         self.save_dir = save_dir
         self.show_speed = show_speed
         self.dual_cache = dual_cache
+        self.load_results_path = load_results_path
 
     @property
     def rank(self):
@@ -307,6 +309,15 @@ class LLaDAEvalHarness(LM):
         raise NotImplementedError
 
     def generate_until(self, requests):
+        # Load cache if path is provided
+        cache = {}
+        if self.load_results_path is not None:
+            print(f"Loading results from {self.load_results_path}")
+            with open(self.load_results_path, "r", encoding="utf-8") as f:
+                cached_data = [json.loads(line) for line in f]
+            # Create a lookup dictionary: question -> answer
+            cache = {entry["question"]: entry["answer"] for entry in cached_data}
+
         output = []
         num_tokens = 0
         num_nfe = 0
@@ -337,6 +348,19 @@ class LLaDAEvalHarness(LM):
         start_time = time.time()
 
         for batch in tqdm(batched_requests, desc="Generating..."):
+            # my changes are from here 
+            warmed_strings = []
+            if self.load_results_path is not None:
+                for req in batch:
+                    question = req.args[0]
+                    if question in cache:
+                        print(f"Question found in cache: {question[:50]}... has the answer: {cache[question]}")
+                        warmed_strings.append(cache[question])
+                    else:
+                        print(f"Warning: Question not found in cache: {question[:50]}...")
+                        warmed_strings.append("")
+            # to here
+
             batched_input_ids = []
             max_len = 0
             pad_len = []
@@ -422,9 +446,10 @@ class LLaDAEvalHarness(LM):
                         factor=self.factor,
                     )
             else:
-                generated_answer, nfe = generate(
+                generated_answer, nfe = wrapper_generate(
                     self.model,
                     input_ids,
+                    warmed_strings,
                     steps=self.steps,
                     gen_length=self.gen_length,
                     block_length=self.block_length,
@@ -488,6 +513,7 @@ class LLaDAEvalHarness(LM):
                 print("avg nfe: ", num_nfe / len(output))
                 print("=" * 20, end="\n\n")
             # self.accelerator.wait_for_everyone()
+            
         end_time = time.time()
         if self.show_speed:
             print(f"Total number of tokens generated: {num_tokens}")
