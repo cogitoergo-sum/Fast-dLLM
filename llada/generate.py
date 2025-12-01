@@ -434,19 +434,6 @@ def get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, nu
 def main():
     device = 'cuda'
 
-    five_shot_prompt = '''
-    Question: Tom has 3 apples. He buys 4 more. How many apples does he have now?
-    Answer: 7
-    Question: A pack of pencils costs $3. Sarah buys 5 packs. How much does she spend?
-    Answer: 15
-    Question: There are 12 cars in a parking lot. 7 leave and 3 arrive. How many cars are in the lot now?
-    Answer: 8
-    Question: John reads 9 pages on Monday and twice as many on Tuesday. How many pages does he read in total?
-    Answer: 27
-    Question: A box contains 6 red balls and 4 blue balls. If David adds 5 more red balls, how many red balls are there?
-    Answer: 11
-    '''
-
     model = LLaDAModelLM.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True, torch_dtype=torch.bfloat16).to(device).eval()
     tokenizer = AutoTokenizer.from_pretrained('GSAI-ML/LLaDA-8B-Instruct', trust_remote_code=True)
 
@@ -457,8 +444,8 @@ def main():
     print("Prompt 1: \n", prompt)
     print("Prompt 2: \n", prompt2)
     # Add special tokens for the Instruct model. The Base model does not require the following two lines.
-    m = [{"role": "user", "content": five_shot_prompt + prompt}, ]
-    m2 = [{"role": "user", "content": five_shot_prompt + prompt2}, ]
+    m = [{"role": "user", "content": prompt}, ]
+    m2 = [{"role": "user", "content":  prompt2}, ]
     prompt = tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False)
     prompt2 = tokenizer.apply_chat_template(m2, add_generation_prompt=True, tokenize=False)
     input_ids = tokenizer(prompt)['input_ids']
