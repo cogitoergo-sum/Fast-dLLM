@@ -455,7 +455,7 @@ def get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, nu
     return x0, transfer_index
 
 def main():
-        device = 'cuda'
+    device = 'cuda'
 
     five_shot_prompt = '''
     Question: Tom has 3 apples. He buys 4 more. How many apples does he have now?
