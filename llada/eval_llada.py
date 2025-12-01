@@ -437,6 +437,36 @@ class LLaDAEvalHarness(LM):
             batched_input_ids = torch.cat(batched_input_ids, dim=0)
             batched_input_ids = batched_input_ids.to(self.device)
 
+            warmed_max_len = 0
+            batched_warmed_ids = []
+            for warmed_string in warmed_strings:
+                warmed_ids = self.tokenizer(warmed_string)["input_ids"]
+                batched_warmed_ids.append(warmed_ids)
+                warmed_max_len = max(warmed_max_len, len(warmed_ids))
+            ## padding warmed ids to the same length
+            batched_warmed_ids = [
+                torch.cat(
+                    [
+                        torch.full(
+                            (1, warmed_max_len - len(warmed_ids)),
+                            self.mask_id,
+                            dtype=torch.long,
+                            device=self.device,
+                        ),
+                        torch.tensor(
+                            warmed_ids,
+                            dtype=torch.long,
+                            device=self.device,
+                        ).unsqueeze(0),
+                    ],
+                    dim=1,
+                )
+                for warmed_ids in batched_warmed_ids
+            ]
+            batched_warmed_ids = torch.cat(batched_warmed_ids, dim=0)
+            batched_warmed_ids = batched_warmed_ids.to(self.device)
+            warmed_ids = batched_warmed_ids
+
             if self.batch_size == 1:
                 attention_mask = None
             else:
@@ -497,10 +527,10 @@ class LLaDAEvalHarness(LM):
                 #     factor=self.factor,
                 # )
                 generated_answer, nfe = mixed_generate(
-                    self.model,
-                    self.model.model.transformer['wte'],
-                    input_ids,
-                    warmed_strings,
+                    model=self.model,
+                    embedding_layer=self.model.model.transformer['wte'],
+                    warmed_tokens=warmed_ids,
+                    prompt=input_ids,
                     steps=self.steps,
                     gen_length=self.gen_length,
                     block_length=self.block_length,
