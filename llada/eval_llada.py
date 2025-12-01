@@ -316,7 +316,25 @@ class LLaDAEvalHarness(LM):
             with open(self.load_results_path, "r", encoding="utf-8") as f:
                 cached_data = [json.loads(line) for line in f]
             # Create a lookup dictionary: question -> answer
-            cache = {entry["doc"]["question"]: entry["doc"]["answer"] for entry in cached_data}
+            for entry in cached_data:
+                # Add the main doc question and answer
+                if "doc" in entry and "question" in entry["doc"] and "answer" in entry["doc"]:
+                    cache[entry["doc"]["question"]] = entry["doc"]["answer"]
+                
+                # Parse additional questions and answers from arguments if present
+                if "arguments" in entry and "gen_args_0" in entry["arguments"] and "arg_0" in entry["arguments"]["gen_args_0"]:
+                    arg_0 = entry["arguments"]["gen_args_0"]["arg_0"]
+                    examples = arg_0.split("\n\n")
+                    for ex in examples:
+                        if ex.startswith("Question: ") and "\nAnswer: " in ex:
+                            try:
+                                q_part, a_part = ex.split("\nAnswer: ", 1)
+                                question = q_part[len("Question: "):].strip()
+                                if "####" in a_part:
+                                    answer = a_part.strip()
+                                    cache[question] = answer
+                            except ValueError:
+                                continue
 
         output = []
         num_tokens = 0
