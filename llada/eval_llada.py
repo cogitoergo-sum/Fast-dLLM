@@ -334,25 +334,26 @@ class LLaDAEvalHarness(LM):
                     if "question" in doc and "answer" in doc:
                         #cleaned, final = self.clean_answer(doc["answer"])  
                         #cache[doc["question"]] = cleaned  # i use cleaned which is the full reasoning + answer
-                        cache[doc["question"]] = resp[0][0]
-                # Parse more Q & A in the arguments field
-                if "arguments" in entry:
-                    try:
-                        arg_0 = entry["arguments"]["gen_args_0"]["arg_0"]
-                        blocks = arg_0.split("\n\n")
+                        cleaned, _ = self.clean_answer(resp[0][0])
+                        cache[doc["question"]] = cleaned
+                # # Parse more Q & A in the arguments field
+                # if "arguments" in entry:
+                #     try:
+                #         arg_0 = entry["arguments"]["gen_args_0"]["arg_0"]
+                #         blocks = arg_0.split("\n\n")
                         
-                        for block in blocks:
-                            if block.startswith("Question: ") and "\nAnswer: " in block:
-                                try:
-                                    q, a = block.split("\nAnswer: ", 1)
-                                    q = q[len("Question: "):].strip()
-                                    a = a.strip()
-                                    cleaned, final = self.clean_answer(a) 
-                                    cache[q] = cleaned  
-                                except ValueError:
-                                    continue
-                    except (KeyError, AttributeError):
-                        pass
+                #         for block in blocks:
+                #             if block.startswith("Question: ") and "\nAnswer: " in block:
+                #                 try:
+                #                     q, a = block.split("\nAnswer: ", 1)
+                #                     q = q[len("Question: "):].strip()
+                #                     a = a.strip()
+                #                     cleaned, final = self.clean_answer(a) 
+                #                     cache[q] = cleaned  
+                #                 except ValueError:
+                #                     continue
+                #     except (KeyError, AttributeError):
+                #         pass
             
         print(f"Loaded {len(cache)} entries into cache")
         output = []

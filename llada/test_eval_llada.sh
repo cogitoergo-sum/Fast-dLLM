@@ -2,12 +2,13 @@
 
 #SBATCH --job-name=fast-dlm-run-base
 #SBATCH --account=cse585f25_class
-#SBATCH --partition=spgpu
+#SBATCH --partition=gpu_mig40
 #SBATCH --time=05:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=60g
-#SBATCH --gpus=a40:1
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus=1
 
 module load cuda
 module load cudnn
