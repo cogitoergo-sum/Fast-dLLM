@@ -153,6 +153,9 @@ def warmed_generate(model, warmed_tokens, prompt, steps=128, gen_length=128, blo
     # output is still gen_length long, but the first warmed_tokens.shape[1] tokens are replaced with warmed_tokens.
     x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
     warmed_tokens_dropped = dropout_warmed_tokens(warmed_tokens, mask_id, drop_prob) # replace 50% of the warmed tokens with the mask token
+    Lw = warmed_tokens_dropped.shape[1]
+    if Lw >= gen_length:
+        warmed_tokens_dropped = warmed_tokens_dropped[:, :gen_length]
     x[:, :prompt.shape[1]] = prompt.clone()
     x[:, prompt.shape[1]:prompt.shape[1] + warmed_tokens_dropped.shape[1]] = warmed_tokens_dropped.clone()
 

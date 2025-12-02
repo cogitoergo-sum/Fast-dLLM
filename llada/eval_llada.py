@@ -34,7 +34,7 @@ from lm_eval.api.registry import register_model
 from tqdm import tqdm
 import os
 from transformers import AutoTokenizer, AutoModel, AutoConfig
-from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, wrapper_generate
+from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, wrapper_generate, warmed_generate
 from model.modeling_llada import LLaDAModelLM
 from mix_generate import mixed_generate
 import json
@@ -526,7 +526,7 @@ class LLaDAEvalHarness(LM):
                 #     threshold=self.threshold,
                 #     factor=self.factor,
                 # )
-                generated_answer, nfe = mixed_generate(
+                generated_answer, nfe = warmed_generate(
                     model=self.model,
                     embedding_layer=self.model.model.transformer['wte'],
                     warmed_tokens=warmed_ids,
@@ -539,7 +539,7 @@ class LLaDAEvalHarness(LM):
                     mask_id=self.mask_id,
                     threshold=self.threshold,
                     factor=self.factor,
-                    drop_prob=0.5
+                    drop_prob=0.75
                 )
 
             if (
