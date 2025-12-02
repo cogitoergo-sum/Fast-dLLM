@@ -528,7 +528,7 @@ class LLaDAEvalHarness(LM):
                 # )
                 generated_answer, nfe = warmed_generate(
                     model=self.model,
-                    embedding_layer=self.model.model.transformer['wte'],
+                    #embedding_layer=self.model.model.transformer['wte'],
                     warmed_tokens=warmed_ids,
                     prompt=input_ids,
                     steps=self.steps,
