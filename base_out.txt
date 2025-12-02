@@ -1,0 +1,14 @@
+CUDA available for PyTorch
+save_path: ./test_gsm8k_parallel/rank_0.jsonl
+load from ./test_gsm8k_parallel/rank_0.jsonl
+processed_count: 128
+Total number of tokens generated: 0
+Total time taken: 0.00019359588623046875 seconds
+Tokens per second: 0.0
+Total NFE is 0
+llada_dist (model_path=GSAI-ML/LLaDA-8B-Instruct,gen_length=256,steps=2,block_length=128,threshold=0.9,save_dir=./test_gsm8k_parallel,show_speed=True), gen_kwargs: (None), limit: 128.0, num_fewshot: 5, batch_size: 1
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value |   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|-----:|---|-----:|
+|gsm8k|      3|flexible-extract|     5|exact_match|↑  |0.8281|±  |0.0335|
+|     |       |strict-match    |     5|exact_match|↑  |0.4297|±  |0.0439|
+

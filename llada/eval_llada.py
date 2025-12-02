@@ -330,10 +330,11 @@ class LLaDAEvalHarness(LM):
                 # Parsing main doc
                 if "doc" in entry:
                     doc = entry["doc"]
+                    resp = entry["resps"]
                     if "question" in doc and "answer" in doc:
-                        cleaned, final = self.clean_answer(doc["answer"])  
-                        cache[doc["question"]] = cleaned  # i use cleaned which is the full reasoning + answer
-                
+                        #cleaned, final = self.clean_answer(doc["answer"])  
+                        #cache[doc["question"]] = cleaned  # i use cleaned which is the full reasoning + answer
+                        cache[doc["question"]] = resp[0][0]
                 # Parse more Q & A in the arguments field
                 if "arguments" in entry:
                     try:
